@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<base target="_top">
+		<title>Leitor de Quadrinhos (CBZ / CBR)</title>
+		<!-- JSZip: usado para abrir arquivos .cbz (zip) -->
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+		<style>
+			html, body {
+			overflow-x: hidden;
+			margin: 0;
+			padding: 0;
+			height: 100vh;
+			color: white;
+			background-color: rgb(0,0,0);
+			font-family: Verdana, sans-serif;
+			display: flex;
+			flex-direction: column;
+		}
+
+		#bar {
+			display: flex;
+			align-items: center;
+			gap: 10px;
+			position: sticky;
+			background: rgb(11,11,11);
+			height: 35px;
+			padding: 5px 10px;
+			flex-wrap: wrap;
+		}
+
+		#bar input[type="file"] {
+			background: rgb(22,22,22);
+			padding: 5px;
+			border: none;
+			max-width: 45vw;
+		}
+
+		#bar input[type="range"] {
+			accent-color: rgb(22,22,22);
+			width: 200px;
+		}
+
+		#bar input[type="number"] {
+			color: white;
+			width: 50px;
+			margin-left: 10px;
+		}
+
+		#imageContainer {
+			flex-grow: 1;
+			text-align: center;
+			overflow: auto;
+		}
+
+		img {
+			max-width: 100%;
+			max-height: 100vh;
+			display: block;
+			margin: auto;
+			padding-bottom: 5px;
+		}
+
+		#pageCounter {
+			margin-left: auto;
+			white-space: nowrap;
+		}
+
+		#messageContainer {
+			width: 100%;
+			position: absolute;
+			top: 50%;
+			left: 50%;
+			transform: translate(-50%, -50%);
+			text-align: center;
+			pointer-events: none;
+		}
+
+		.message {
+			font-size: 32px;
+			text-shadow: 0 0 4px #000;
+			pointer-events: none;
+		}
+
+		#loadingMessage {
+			opacity: 0%;
+			transition: opacity 0.5s ease-in-out;
+		}
+		</style>
+	</head>	
+	
+	<body>
+		<div id="messageContainer">
+			<p class="message" id="loadingMessage">Carregando... (0 / 0)</p>
+		</div>
+		<div id="imageContainer"></div>
+		<div id="bar">
+			<input type="file" id="fileInput" accept=".cbz,.cbr,.zip,.rar">
+			<text>Zoom:</text>
+			<input type="range" id="zoomSlider" min="60" max="160" value="100">
+			<input type="number" id="zoomInput" min="60" max="160" value="100" step="1">
+			<text id="pageCounter">Página 0 / 0</text>
+		</div>
+	</body>
+	
+	<script>
+		const imageContainer = document.getElementById('imageContainer');
+		const loadingMessage = document.getElementById("loadingMessage");
+		const pageCounter = document.getElementById('pageCounter');
+		const zoomSlider = document.getElementById("zoomSlider");
+		const zoomInput = document.getElementById("zoomInput");
+
+		// URLs do node-unrar-js (usado apenas quando um .cbr/.rar é aberto)
+		const UNRAR_MODULE_URL = "https://unpkg.com/node-unrar-js@2.0.2/esm/index.esm.js";
+		const UNRAR_WASM_URL = "https://unpkg.com/node-unrar-js@2.0.2/esm/js/unrar.wasm";
+		let unrarWasmBinaryPromise = null; // cache para não baixar de novo a cada arquivo
+
+		const IMAGE_EXT_REGEX = /\.(jpe?g|png|gif|webp|bmp)$/i;
+
+		function mimeForFilename(filename) {
+			const ext = filename.split('.').pop().toLowerCase();
+			switch (ext) {
+				case 'jpg':
+				case 'jpeg': return 'image/jpeg';
+				case 'png': return 'image/png';
+				case 'gif': return 'image/gif';
+				case 'webp': return 'image/webp';
+				case 'bmp': return 'image/bmp';
+				default: return 'application/octet-stream';
+			}
+		}
+
+		document.getElementById('fileInput').addEventListener('change', async function(event) {
+			loadingMessage.textContent = `Carregando... (0 / 0)`;
+		
+			const file = event.target.files[0];
+			if (!file) return; // verifica se ao menos um arquivo foi selecionado
+			loadingMessage.style.opacity = "1";
+			
+			const totalPages = await loadBook(file);
+			if (totalPages == 0) {
+				console.log(`Falha ao carregar '${file.name}'. Verifique o arquivo...`);
+				
+				setTimeout(() => {
+					loadingMessage.style.opacity = "0";
+				}, 500);
+			} 
+			else {
+				console.log(`'${file.name}' carregado com ${totalPages} páginas. Boa leitura! =)`);
+
+				setTimeout(() => {
+					loadingMessage.style.opacity = "0";
+				}, 500);
+
+				// Configura o zoom depois que as imagens forem carregadas
+				setupZoom(totalPages);
+				
+				// Lógica do contador de páginas
+				imageContainer.addEventListener('scroll', function() {
+					setPageCounter(totalPages);
+				});
+			}
+		});
+
+
+		// Decide qual carregador usar de acordo com a extensão do arquivo
+		async function loadBook(file) {
+			const name = file.name.toLowerCase();
+
+			if (name.endsWith('.cbr') || name.endsWith('.rar')) {
+				return await loadBookFromRar(file);
+			} else {
+				// .cbz, .zip ou qualquer outra coisa: tenta como zip
+				return await loadBookFromZip(file);
+			}
+		}
+
+
+		// Carrega arquivos .cbz / .zip usando JSZip
+		async function loadBookFromZip(file) {
+			const zip = new JSZip();
+			const zipData = await file.arrayBuffer();
+			var contents;
+			try {
+				contents = await zip.loadAsync(zipData);
+			} catch (err) {
+				alert("Não foi possível abrir o arquivo cbz/zip.\n\n" + err);
+				return 0;
+			}
+			
+			const imageFiles = Object.keys(contents.files) 
+				.filter(filename => !contents.files[filename].dir)
+				.filter(filename => filename.match(IMAGE_EXT_REGEX))
+				.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+			
+			imageContainer.innerHTML = '';
+			const totalPages = imageFiles.length;
+			let pagesLoaded = 1;
+		   
+			for (const filename of imageFiles) {
+				const imgData = await contents.files[filename].async('blob');
+				const imgUrl = URL.createObjectURL(imgData);
+
+				const img = document.createElement('img');
+				img.src = imgUrl;
+				imageContainer.appendChild(img);
+				
+				loadingMessage.textContent = `Carregando... (${pagesLoaded} / ${totalPages})`;
+				pagesLoaded += 1;
+			}
+			
+			return totalPages;
+		}
+
+
+		// Carrega arquivos .cbr / .rar usando node-unrar-js (WebAssembly)
+		async function loadBookFromRar(file) {
+			let createExtractorFromData;
+			try {
+				if (!unrarWasmBinaryPromise) {
+					unrarWasmBinaryPromise = fetch(UNRAR_WASM_URL).then(r => r.arrayBuffer());
+				}
+				const [unrarModule, wasmBinary] = await Promise.all([
+					import(UNRAR_MODULE_URL),
+					unrarWasmBinaryPromise
+				]);
+				createExtractorFromData = unrarModule.createExtractorFromData;
+
+				const rarData = await file.arrayBuffer();
+				const extractor = await createExtractorFromData({ wasmBinary, data: rarData });
+
+				const list = extractor.getFileList();
+				const fileHeaders = [...list.fileHeaders]
+					.filter(h => !h.flags.directory)
+					.filter(h => h.name.match(IMAGE_EXT_REGEX))
+					.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+
+				if (fileHeaders.length === 0) {
+					alert("Nenhuma imagem foi encontrada dentro do arquivo cbr.");
+					return 0;
+				}
+
+				const extracted = extractor.extract({ files: fileHeaders.map(h => h.name) });
+				const extractedFiles = [...extracted.files];
+
+				// Garante a mesma ordem definida em fileHeaders (a extração pode não preservar a ordem)
+				const byName = new Map(extractedFiles.map(f => [f.fileHeader.name, f]));
+
+				imageContainer.innerHTML = '';
+				const totalPages = fileHeaders.length;
+				let pagesLoaded = 1;
+
+				for (const header of fileHeaders) {
+					const entry = byName.get(header.name);
+					if (!entry || !entry.extraction) continue;
+
+					const blob = new Blob([entry.extraction], { type: mimeForFilename(header.name) });
+					const imgUrl = URL.createObjectURL(blob);
+
+					const img = document.createElement('img');
+					img.src = imgUrl;
+					imageContainer.appendChild(img);
+
+					loadingMessage.textContent = `Carregando... (${pagesLoaded} / ${totalPages})`;
+					pagesLoaded += 1;
+				}
+
+				return totalPages;
+			} catch (err) {
+				alert("Não foi possível abrir o arquivo cbr. Verifique se ele não está protegido por senha ou corrompido.\n\n" + err);
+				return 0;
+			}
+		}
+
+
+		function setPageCounter(pageCount) {
+			const imageHeight = imageContainer.querySelector('img')?.height || 0;
+			const padding = 5; // 5px de espaçamento entre as imagens
+			const totalHeight = imageHeight + padding;
+			const scrollPosition = imageContainer.scrollTop;
+			const currentPage = Math.floor(scrollPosition / totalHeight) + 1;
+			pageCounter.textContent = `Página ${currentPage} / ${pageCount}`;
+		}
+
+
+		// Atualiza o zoom
+		function updateZoom(value, pageCount) {
+			const images = document.querySelectorAll("#imageContainer img");
+			
+			images.forEach(img => {
+				img.style.maxHeight = `${value}vh`;
+			});
+			
+			setPageCounter(pageCount);
+		}
+
+
+		function setupZoom(pageCount) {
+			let zoomLevel = zoomSlider.value || 100; // Nível de zoom padrão de 100%
+
+			updateZoom(zoomLevel, pageCount);
+
+			zoomSlider.addEventListener("input", function () {
+				const value = parseInt(zoomSlider.value);
+				zoomInput.value = value;
+				updateZoom(value, pageCount);
+			});
+
+			zoomInput.addEventListener("input", function () {
+				const value = parseInt(zoomInput.value);
+				if (value >= 60 && value <= 160) {
+					zoomSlider.value = value;
+					updateZoom(value, pageCount);
+				} else {
+					zoomInput.value = zoomLevel;
+				}
+			});
+		}
+	</script>
+</html>
