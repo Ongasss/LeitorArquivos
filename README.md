@@ -1,6 +1,8 @@
 
 # Painel — leitor de quadrinhos
 
+https://ongasss.github.io/LeitorArquivos/
+
 Aplicação web de página única (um único arquivo `.html`) para ler quadrinhos digitais direto no navegador, sem precisar instalar nada ou enviar seus arquivos para nenhum servidor.
 
 ## O que ela faz
