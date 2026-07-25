@@ -1,4 +1,4 @@
-[README.md](https://github.com/user-attachments/files/30367091/README.md)
+
 # Painel — leitor de quadrinhos
 
 Aplicação web de página única (um único arquivo `.html`) para ler quadrinhos digitais direto no navegador, sem precisar instalar nada ou enviar seus arquivos para nenhum servidor.
