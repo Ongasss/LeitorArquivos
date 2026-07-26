@@ -22,9 +22,9 @@ Aplicação web de página única (um único arquivo `.html`) para ler quadrinho
 4. Leia! Use os controles no topo da tela para trocar o modo de leitura, ajustar o zoom, ver as miniaturas ou entrar em tela cheia.
 
 **Atalhos de teclado** (na tela de leitura):
-- `←` / `→` ou `Espaço`: navegar entre páginas (ou rolar, no modo contínuo)
+- `←` / `→`, `A` / `D`ou `Espaço`: navegar entre páginas (ou rolar, no modo contínuo)
 - `F`: alternar tela cheia
-- `G` ou `T`: abrir/fechar o painel de miniaturas
+- `G`: abrir/fechar o painel de miniaturas
 - `Esc`: fechar miniaturas ou sair da tela cheia
 
 ## Como funciona por baixo dos panos
