@@ -1,0 +1,1167 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Painel — leitor de quadrinhos</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bangers&family=Manrope:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+<style>
+	:root{
+		--ink-950:#0b0b0d;
+		--ink-900:#151217;
+		--ink-800:#211d25;
+		--ink-700:#2d2733;
+		--paper:#ece2c6;
+		--paper-dim:#d8cdae;
+		--crimson:#e0293f;
+		--crimson-dim:#a01d2c;
+		--cobalt:#3f6fb0;
+		--text-100:#f6f2e7;
+		--text-muted:#a79f9a;
+		--line:#000000;
+		--zoom:100;
+		--radius:2px;
+	}
+
+	*{box-sizing:border-box;}
+
+	html,body{
+		margin:0;
+		padding:0;
+		height:100%;
+		height:100dvh;
+		background:var(--ink-950);
+		color:var(--text-100);
+		font-family:'Manrope',sans-serif;
+		-webkit-font-smoothing:antialiased;
+		overscroll-behavior:none;
+	}
+
+	body{overflow:hidden;}
+
+	button{font-family:inherit;}
+
+	::selection{background:var(--crimson);color:var(--text-100);}
+
+	/* ---------- decorative halftone ---------- */
+	.halftone-bg{
+		position:fixed;
+		inset:0;
+		pointer-events:none;
+		z-index:0;
+		opacity:.5;
+		background-image:radial-gradient(var(--ink-800) 1px, transparent 1.4px);
+		background-size:14px 14px;
+		mask-image:radial-gradient(circle at 20% 15%, rgba(0,0,0,.9), transparent 55%),
+			radial-gradient(circle at 85% 80%, rgba(0,0,0,.7), transparent 50%);
+		-webkit-mask-image:radial-gradient(circle at 20% 15%, rgba(0,0,0,.9), transparent 55%),
+			radial-gradient(circle at 85% 80%, rgba(0,0,0,.7), transparent 50%);
+	}
+
+	.screen{
+		position:relative;
+		z-index:1;
+		width:100vw;
+		height:100vh;
+		height:100dvh;
+		display:none;
+	}
+	.screen.active{display:flex;}
+
+	/* icons */
+	.icon{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;display:block;}
+
+	/* ================= UPLOAD SCREEN ================= */
+	#screen-upload{
+		flex-direction:column;
+		align-items:center;
+		justify-content:center;
+		padding:24px;
+		gap:38px;
+	}
+
+	.brand{
+		display:flex;
+		flex-direction:column;
+		align-items:center;
+		gap:2px;
+		text-align:center;
+	}
+	.brand-mark{
+		font-family:'Bangers',cursive;
+		font-size:56px;
+		letter-spacing:2px;
+		color:var(--text-100);
+		line-height:1;
+		text-shadow:3px 3px 0 var(--crimson);
+	}
+	.brand-sub{
+		font-family:'Space Mono',monospace;
+		font-size:12px;
+		letter-spacing:4px;
+		text-transform:uppercase;
+		color:var(--text-muted);
+	}
+
+	.upload-wrap{
+		display:flex;
+		flex-direction:column;
+		align-items:center;
+		gap:30px;
+		width:100%;
+		max-width:560px;
+	}
+
+	.dropzone{
+		position:relative;
+		width:100%;
+		background:var(--paper);
+		color:var(--ink-950);
+		border:3px solid var(--line);
+		border-radius:var(--radius);
+		box-shadow:7px 7px 0 var(--line);
+		transform:rotate(-0.6deg);
+		padding:46px 30px 34px;
+		display:flex;
+		flex-direction:column;
+		align-items:center;
+		gap:14px;
+		text-align:center;
+		transition:transform .15s ease, box-shadow .15s ease, background .15s ease;
+	}
+	.dropzone::before{
+		content:"";
+		position:absolute;
+		inset:0;
+		background-image:radial-gradient(rgba(0,0,0,.12) 1px, transparent 1.3px);
+		background-size:8px 8px;
+		opacity:.5;
+		pointer-events:none;
+	}
+	.dropzone.drag{
+		transform:rotate(0deg) scale(1.015);
+		background:#f4ecd6;
+		box-shadow:9px 9px 0 var(--crimson);
+	}
+
+	.dropzone-icon{
+		width:64px;height:64px;
+		display:flex;align-items:center;justify-content:center;
+		color:var(--ink-950);
+	}
+	.dropzone-icon .icon{width:52px;height:52px;stroke-width:1.6;}
+
+	.dropzone-title{
+		font-size:19px;
+		font-weight:800;
+		margin:0;
+	}
+	.dropzone-sub{
+		font-family:'Space Mono',monospace;
+		font-size:11px;
+		text-transform:uppercase;
+		letter-spacing:3px;
+		color:#6b6455;
+		margin:0;
+	}
+
+	.stamp-btn{
+		position:relative;
+		background:var(--crimson);
+		color:var(--text-100);
+		border:3px solid var(--line);
+		border-radius:var(--radius);
+		padding:12px 26px;
+		font-weight:800;
+		font-size:14px;
+		letter-spacing:1px;
+		text-transform:uppercase;
+		cursor:pointer;
+		box-shadow:4px 4px 0 var(--line);
+		transform:rotate(1deg);
+		transition:transform .12s ease, box-shadow .12s ease, background .12s ease;
+	}
+	.stamp-btn:hover{background:var(--crimson-dim);}
+	.stamp-btn:active,
+	.stamp-btn.pressed{
+		transform:translate(3px,3px) rotate(1deg);
+		box-shadow:1px 1px 0 var(--line);
+	}
+
+	.format-pills{
+		display:flex;
+		gap:8px;
+		flex-wrap:wrap;
+		justify-content:center;
+		margin-top:6px;
+	}
+	.format-pills span{
+		font-family:'Space Mono',monospace;
+		font-size:11px;
+		font-weight:700;
+		border:2px solid var(--line);
+		background:var(--text-100);
+		color:var(--ink-950);
+		padding:3px 8px;
+		border-radius:20px;
+	}
+
+	.feature-row{
+		list-style:none;
+		display:flex;
+		gap:28px;
+		flex-wrap:wrap;
+		justify-content:center;
+		margin:0;
+		padding:0;
+		max-width:520px;
+	}
+	.feature-row li{
+		display:flex;
+		align-items:center;
+		gap:8px;
+		font-size:13px;
+		color:var(--text-muted);
+	}
+	.feature-row .icon{width:18px;height:18px;color:var(--crimson);flex-shrink:0;}
+
+	#fileError{
+		font-size:13px;
+		color:var(--crimson);
+		font-weight:700;
+		text-align:center;
+		min-height:18px;
+	}
+
+	/* loading overlay */
+	.loading-overlay{
+		position:fixed;
+		inset:0;
+		z-index:5;
+		background:rgba(11,11,13,.92);
+		display:flex;
+		flex-direction:column;
+		align-items:center;
+		justify-content:center;
+		gap:18px;
+		opacity:0;
+		pointer-events:none;
+		transition:opacity .25s ease;
+	}
+	.loading-overlay.show{opacity:1;pointer-events:all;}
+
+	.halftone-spinner{
+		width:56px;height:56px;
+		border-radius:50%;
+		border:4px solid var(--ink-700);
+		border-top-color:var(--crimson);
+		animation:spin .8s linear infinite;
+	}
+	@keyframes spin{to{transform:rotate(360deg);}}
+
+	#loadingText{
+		font-family:'Space Mono',monospace;
+		font-size:13px;
+		letter-spacing:1px;
+		color:var(--text-100);
+	}
+
+	/* ================= READER SCREEN ================= */
+	#screen-reader{
+		flex-direction:column;
+		background:var(--ink-950);
+	}
+
+	#toolbar{
+		display:flex;
+		align-items:center;
+		gap:12px;
+		height:56px;
+		flex-shrink:0;
+		background:var(--ink-900);
+		border-bottom:2px solid var(--line);
+		padding:0 12px;
+		position:sticky;
+		top:0;
+		z-index:20;
+		user-select:none;
+	}
+
+	.icon-btn{
+		width:38px;height:38px;
+		display:flex;align-items:center;justify-content:center;
+		background:transparent;
+		border:none;
+		color:var(--text-100);
+		border-radius:6px;
+		cursor:pointer;
+		flex-shrink:0;
+	}
+	.icon-btn:hover{background:var(--ink-800);}
+	.icon-btn.active{color:var(--crimson);background:var(--ink-800);}
+
+	.toolbar-title{
+		display:flex;
+		align-items:center;
+		gap:10px;
+		min-width:0;
+		flex:1;
+	}
+	#bookTitle{
+		font-weight:700;
+		font-size:14px;
+		white-space:nowrap;
+		overflow:hidden;
+		text-overflow:ellipsis;
+	}
+	.mono-badge{
+		font-family:'Space Mono',monospace;
+		font-size:12px;
+		background:var(--ink-800);
+		border:1px solid #3a3440;
+		padding:3px 8px;
+		border-radius:20px;
+		color:var(--text-muted);
+		flex-shrink:0;
+	}
+
+	.toolbar-controls{
+		display:flex;
+		align-items:center;
+		gap:4px;
+		flex-shrink:0;
+	}
+	.mode-switch{
+		display:flex;
+		gap:2px;
+		background:var(--ink-800);
+		border-radius:8px;
+		padding:2px;
+	}
+	.mode-switch .icon-btn{width:34px;height:34px;border-radius:6px;}
+	.mode-switch .icon-btn.active{background:var(--crimson);color:var(--text-100);}
+	.mode-switch .icon-btn.active:hover{background:var(--crimson);}
+	.zoom-group{
+		display:flex;
+		align-items:center;
+		gap:6px;
+		margin:0 4px;
+	}
+	.zoom-group input[type="range"]{
+		width:110px;
+		accent-color:var(--crimson);
+	}
+	#zoomValue{
+		font-family:'Space Mono',monospace;
+		font-size:11px;
+		color:var(--text-muted);
+		width:38px;
+		text-align:right;
+	}
+	.toolbar-divider{
+		width:1px;
+		height:26px;
+		background:#312b37;
+		margin:0 4px;
+	}
+
+	#readerMain{
+		position:relative;
+		flex:1;
+		min-height:0;
+		background:var(--ink-950);
+		overflow:hidden;
+		user-select:none;
+	}
+
+	.reader-view{
+		width:100%;
+		height:100%;
+	}
+	.reader-view.hidden{display:none;}
+	/* #pageView e #spreadView definem display:flex via seletor de ID (maior especificidade
+	   que .reader-view.hidden). Sem esta regra, a classe "hidden" não conseguia escondê-los,
+	   e eles continuavam ocupando espaço no layout mesmo "ocultos". */
+	#pageView.hidden, #spreadView.hidden{display:none;}
+
+	#scrollView{
+		overflow-y:auto;
+		overflow-x:hidden;
+		text-align:center;
+		padding:10px 0 60px;
+		overscroll-behavior:contain;
+		user-select:none;
+	}
+	.page-frame{margin:0 auto 10px;}
+	.page-frame img{
+		display:block;
+		margin:0 auto;
+		max-width:100%;
+		max-height:calc(var(--zoom) * 1vh);
+		-webkit-user-drag:none;
+	}
+
+	#pageView{
+		position:relative;
+		display:flex;
+		height:100%;
+		width:100%;
+		overflow:auto;
+		overscroll-behavior:contain;
+		user-select:none;
+	}
+	#pageImg{
+		margin:auto;
+		max-width:96%;
+		max-height:calc(var(--zoom) * 1%);
+		object-fit:contain;
+		box-shadow:0 0 0 2px #000, 0 10px 40px rgba(0,0,0,.6);
+		-webkit-user-drag:none;
+	}
+
+	#spreadView{
+		position:relative;
+		display:flex;
+		align-items:center;
+		justify-content:center;
+		height:100%;
+		width:100%;
+		overflow:auto;
+		overscroll-behavior:contain;
+		user-select:none;
+		gap:6px;
+		padding:0 10px;
+	}
+	.spread-page{
+		max-width:calc(50% - 3px);
+		max-height:calc(var(--zoom) * 1%);
+		object-fit:contain;
+		box-shadow:0 0 0 2px #000, 0 10px 40px rgba(0,0,0,.6);
+		-webkit-user-drag:none;
+		flex-shrink:0;
+	}
+	.spread-page.is-empty{display:none;}
+	#spreadView.is-solo .spread-page{max-width:96%;}
+
+	.nav-zone{
+		position:absolute;
+		top:0;
+		bottom:0;
+		background:transparent;
+		border:none;
+		cursor:pointer;
+		display:none;
+		align-items:center;
+		opacity:0;
+		transition:opacity .15s ease;
+		color:var(--text-100);
+		z-index:2;
+	}
+	#readerMain.mode-page .nav-zone,
+	#readerMain.mode-spread .nav-zone{display:flex;}
+	.nav-zone:hover{opacity:1;background:linear-gradient(to var(--fade-dir,right), rgba(0,0,0,.35), transparent);}
+	.nav-left{left:0;width:35%;justify-content:flex-start;padding-left:14px;--fade-dir:right;}
+	.nav-right{right:0;width:65%;justify-content:flex-end;padding-right:14px;--fade-dir:left;}
+	.nav-zone .icon{width:34px;height:34px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.8));}
+
+	#progressBar{
+		height:4px;
+		background:var(--ink-900);
+		flex-shrink:0;
+	}
+	#progressFill{
+		height:100%;
+		width:0%;
+		background:var(--crimson);
+		transition:width .2s ease;
+	}
+
+	/* thumbnail drawer */
+	#thumbDrawer{
+		position:fixed;
+		top:0;right:0;bottom:0;
+		width:280px;
+		max-width:82vw;
+		background:var(--ink-900);
+		border-left:2px solid var(--line);
+		z-index:4;
+		display:flex;
+		flex-direction:column;
+		transform:translateX(100%);
+		transition:transform .22s ease;
+	}
+	#thumbDrawer.open{transform:translateX(0);}
+	.thumb-drawer-header{
+		display:flex;
+		align-items:center;
+		justify-content:space-between;
+		padding:14px 14px;
+		border-bottom:2px solid var(--line);
+		font-weight:800;
+		font-size:13px;
+		text-transform:uppercase;
+		letter-spacing:1px;
+	}
+	.thumb-grid{
+		overflow-y:auto;
+		padding:12px;
+		display:grid;
+		grid-template-columns:1fr 1fr;
+		gap:10px;
+		align-content:start;
+	}
+	.thumb-item{
+		position:relative;
+		background:var(--ink-800);
+		border:2px solid transparent;
+		border-radius:4px;
+		padding:0;
+		cursor:pointer;
+		overflow:hidden;
+		aspect-ratio:2/3;
+	}
+	.thumb-item img{
+		width:100%;height:100%;
+		object-fit:cover;
+		display:block;
+		opacity:.85;
+	}
+	.thumb-item span{
+		position:absolute;
+		bottom:4px;left:4px;
+		font-family:'Space Mono',monospace;
+		font-size:10px;
+		background:rgba(0,0,0,.75);
+		padding:1px 5px;
+		border-radius:3px;
+	}
+	.thumb-item.active{border-color:var(--crimson);}
+	.thumb-item:hover img{opacity:1;}
+
+	#thumbOverlay{
+		position:fixed;inset:0;
+		background:rgba(0,0,0,.4);
+		z-index:3;
+		opacity:0;
+		pointer-events:none;
+		transition:opacity .2s ease;
+	}
+	#thumbOverlay.open{opacity:1;pointer-events:all;}
+
+	/* scrollbar styling */
+	#scrollView::-webkit-scrollbar,
+	.thumb-grid::-webkit-scrollbar{width:10px;}
+	#scrollView::-webkit-scrollbar-thumb,
+	.thumb-grid::-webkit-scrollbar-thumb{background:var(--ink-700);border-radius:6px;}
+	#scrollView::-webkit-scrollbar-track,
+	.thumb-grid::-webkit-scrollbar-track{background:transparent;}
+
+	@media (max-width:640px){
+		.brand-mark{font-size:42px;}
+		.dropzone{padding:34px 18px 26px;}
+		.feature-row{gap:16px;}
+		#bookTitle{display:none;}
+		.zoom-group input[type="range"]{width:70px;}
+		.toolbar-divider{display:none;}
+	}
+
+	@media (prefers-reduced-motion:reduce){
+		*{transition:none !important;animation:none !important;}
+	}
+</style>
+</head>
+<body>
+
+<div class="halftone-bg" aria-hidden="true"></div>
+
+<!-- ============ TELA DE SELEÇÃO ============ -->
+<section id="screen-upload" class="screen active">
+	<div class="upload-wrap">
+		<div class="brand">
+			<span class="brand-mark">r. o</span>
+			<span class="brand-sub">leitor de quadrinhos</span>
+		</div>
+
+		<div id="dropzone" class="dropzone">
+			<div class="dropzone-icon">
+				<svg class="icon" viewBox="0 0 24 24">
+					<path d="M4 5c3-1.5 6-1.5 8 0v14c-2-1.5-5-1.5-8 0z"/>
+					<path d="M20 5c-3-1.5-6-1.5-8 0v14c2-1.5 5-1.5 8 0z"/>
+				</svg>
+			</div>
+			<p class="dropzone-title">Solte seu quadrinho aqui</p>
+			<p class="dropzone-sub">ou</p>
+			<button id="browseBtn" class="stamp-btn" type="button">Escolher arquivo</button>
+			<input type="file" id="fileInput" accept=".cbz,.cbr,.zip,.rar" hidden>
+			<div class="format-pills">
+				<span>.CBZ</span><span>.CBR</span><span>.ZIP</span><span>.RAR</span>
+			</div>
+		</div>
+
+		<p id="fileError"></p>
+
+		<ul class="feature-row">
+			<li>
+				<svg class="icon" viewBox="0 0 24 24"><rect x="2" y="4" width="9" height="16" rx="1"/><rect x="13" y="4" width="9" height="16" rx="1"/></svg>
+				Rolagem contínua, página única ou duas páginas lado a lado
+			</li>
+			<li>
+				<svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+				Zoom ajustável
+			</li>
+			<li>
+				<svg class="icon" viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/></svg>
+				100% no navegador — nada é enviado a servidores
+			</li>
+		</ul>
+	</div>
+
+	<div id="loadingOverlay" class="loading-overlay">
+		<div class="halftone-spinner"></div>
+		<p id="loadingText">Abrindo... (0 / 0)</p>
+	</div>
+</section>
+
+<!-- ============ TELA DE LEITURA ============ -->
+<section id="screen-reader" class="screen">
+	<header id="toolbar">
+		<button id="backBtn" class="icon-btn" title="Voltar">
+			<svg class="icon" viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+		</button>
+
+		<div class="toolbar-title">
+			<span id="bookTitle">—</span>
+			<span id="pageBadge" class="mono-badge">0 / 0</span>
+		</div>
+
+		<div class="toolbar-controls">
+			<div class="mode-switch" role="group" aria-label="Modo de leitura">
+				<button id="modeScrollBtn" class="icon-btn" title="Rolagem contínua">
+					<svg class="icon" viewBox="0 0 24 24"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>
+				</button>
+				<button id="modePageBtn" class="icon-btn" title="Página única">
+					<svg class="icon" viewBox="0 0 24 24"><rect x="6" y="3" width="12" height="18" rx="1"/></svg>
+				</button>
+				<button id="modeSpreadBtn" class="icon-btn" title="Duas páginas lado a lado">
+					<svg class="icon" viewBox="0 0 24 24"><rect x="2" y="4" width="9" height="16" rx="1"/><rect x="13" y="4" width="9" height="16" rx="1"/></svg>
+				</button>
+			</div>
+
+			<div class="toolbar-divider"></div>
+
+			<div class="zoom-group">
+				<button id="zoomOutBtn" class="icon-btn" title="Diminuir zoom">
+					<svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+				</button>
+				<input type="range" id="zoomSlider" min="60" max="150" step="10" value="100">
+				<span id="zoomValue">100%</span>
+				<button id="zoomInBtn" class="icon-btn" title="Aumentar zoom">
+					<svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+				</button>
+			</div>
+
+			<div class="toolbar-divider"></div>
+
+			<button id="thumbsBtn" class="icon-btn" title="Miniaturas">
+				<svg class="icon" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+			</button>
+			<button id="fullscreenBtn" class="icon-btn" title="Tela cheia">
+				<svg class="icon" viewBox="0 0 24 24"><polyline points="4 9 4 4 9 4"/><polyline points="20 9 20 4 15 4"/><polyline points="4 15 4 20 9 20"/><polyline points="20 15 20 20 15 20"/></svg>
+			</button>
+		</div>
+	</header>
+
+	<main id="readerMain" class="mode-scroll">
+		<div id="scrollView" class="reader-view"></div>
+		<div id="pageView" class="reader-view hidden">
+			<img id="pageImg" alt="Página atual">
+		</div>
+		<div id="spreadView" class="reader-view hidden">
+			<img id="spreadImgLeft" class="spread-page" alt="Página esquerda">
+			<img id="spreadImgRight" class="spread-page" alt="Página direita">
+		</div>
+		<button id="prevBtn" class="nav-zone nav-left" aria-label="Página anterior">
+			<svg class="icon" viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+		</button>
+		<button id="nextBtn" class="nav-zone nav-right" aria-label="Próxima página">
+			<svg class="icon" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+		</button>
+	</main>
+
+	<div id="progressBar"><div id="progressFill"></div></div>
+</section>
+
+<div id="thumbOverlay"></div>
+<aside id="thumbDrawer">
+	<div class="thumb-drawer-header">
+		<span>Páginas</span>
+		<button id="closeThumbs" class="icon-btn">
+			<svg class="icon" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+		</button>
+	</div>
+	<div id="thumbGrid" class="thumb-grid"></div>
+</aside>
+
+<script>
+(function(){
+	"use strict";
+
+	// ---------- elementos ----------
+	const screenUpload = document.getElementById('screen-upload');
+	const screenReader = document.getElementById('screen-reader');
+	const dropzone = document.getElementById('dropzone');
+	const fileInput = document.getElementById('fileInput');
+	const browseBtn = document.getElementById('browseBtn');
+	const fileError = document.getElementById('fileError');
+	const loadingOverlay = document.getElementById('loadingOverlay');
+	const loadingText = document.getElementById('loadingText');
+
+	const backBtn = document.getElementById('backBtn');
+	const bookTitleEl = document.getElementById('bookTitle');
+	const pageBadge = document.getElementById('pageBadge');
+	const modeScrollBtn = document.getElementById('modeScrollBtn');
+	const modePageBtn = document.getElementById('modePageBtn');
+	const modeSpreadBtn = document.getElementById('modeSpreadBtn');
+	const zoomSlider = document.getElementById('zoomSlider');
+	const zoomValue = document.getElementById('zoomValue');
+	const zoomOutBtn = document.getElementById('zoomOutBtn');
+	const zoomInBtn = document.getElementById('zoomInBtn');
+	const thumbsBtn = document.getElementById('thumbsBtn');
+	const fullscreenBtn = document.getElementById('fullscreenBtn');
+
+	const readerMain = document.getElementById('readerMain');
+	const scrollView = document.getElementById('scrollView');
+	const pageView = document.getElementById('pageView');
+	const pageImg = document.getElementById('pageImg');
+	const spreadView = document.getElementById('spreadView');
+	const spreadImgLeft = document.getElementById('spreadImgLeft');
+	const spreadImgRight = document.getElementById('spreadImgRight');
+	const prevBtn = document.getElementById('prevBtn');
+	const nextBtn = document.getElementById('nextBtn');
+	const progressFill = document.getElementById('progressFill');
+
+	const thumbDrawer = document.getElementById('thumbDrawer');
+	const thumbOverlay = document.getElementById('thumbOverlay');
+	const thumbGrid = document.getElementById('thumbGrid');
+	const closeThumbsBtn = document.getElementById('closeThumbs');
+
+	// ---------- estado ----------
+	let spreadRight = null; // página direita exibida no modo "duas páginas" (ou null se solo)
+	let pages = [];          // [{name, url}]
+	let currentPage = 1;
+	let mode = 'scroll';      // 'scroll' | 'page' | 'spread'
+	let observer = null;
+	let unrarWasmBinaryPromise = null;
+
+	const IMAGE_EXT_REGEX = /\.(jpe?g|png|gif|webp|bmp)$/i;
+	const UNRAR_MODULE_URL = "https://unpkg.com/node-unrar-js@2.0.2/esm/index.esm.js";
+	const UNRAR_WASM_URL = "https://unpkg.com/node-unrar-js@2.0.2/esm/js/unrar.wasm";
+
+	function naturalSort(a, b){
+		return a.localeCompare(b, undefined, { numeric:true, sensitivity:'base' });
+	}
+
+	function mimeForFilename(filename){
+		const ext = filename.split('.').pop().toLowerCase();
+		switch(ext){
+			case 'jpg': case 'jpeg': return 'image/jpeg';
+			case 'png': return 'image/png';
+			case 'gif': return 'image/gif';
+			case 'webp': return 'image/webp';
+			case 'bmp': return 'image/bmp';
+			default: return 'application/octet-stream';
+		}
+	}
+
+	// ---------- extração ----------
+	async function extractCbz(file, onProgress){
+		const zip = new JSZip();
+		const data = await file.arrayBuffer();
+		const contents = await zip.loadAsync(data);
+
+		const names = Object.keys(contents.files)
+			.filter(n => !contents.files[n].dir)
+			.filter(n => IMAGE_EXT_REGEX.test(n))
+			.sort(naturalSort);
+
+		if (names.length === 0) throw new Error("Nenhuma imagem encontrada no arquivo.");
+
+		const result = [];
+		for (let i=0; i<names.length; i++){
+			const blob = await contents.files[names[i]].async('blob');
+			result.push({ name: names[i], url: URL.createObjectURL(blob) });
+			onProgress(i+1, names.length);
+		}
+		return result;
+	}
+
+	async function extractCbr(file, onProgress){
+		if (!unrarWasmBinaryPromise){
+			unrarWasmBinaryPromise = fetch(UNRAR_WASM_URL).then(r => r.arrayBuffer());
+		}
+		const [unrarModule, wasmBinary] = await Promise.all([
+			import(UNRAR_MODULE_URL),
+			unrarWasmBinaryPromise
+		]);
+
+		const rarData = await file.arrayBuffer();
+		const extractor = await unrarModule.createExtractorFromData({ wasmBinary, data: rarData });
+
+		const list = extractor.getFileList();
+		const headers = [...list.fileHeaders]
+			.filter(h => !h.flags.directory)
+			.filter(h => IMAGE_EXT_REGEX.test(h.name))
+			.sort((a,b) => naturalSort(a.name, b.name));
+
+		if (headers.length === 0) throw new Error("Nenhuma imagem encontrada no arquivo.");
+
+		const extracted = extractor.extract({ files: headers.map(h => h.name) });
+		const byName = new Map([...extracted.files].map(f => [f.fileHeader.name, f]));
+
+		const result = [];
+		for (let i=0; i<headers.length; i++){
+			const entry = byName.get(headers[i].name);
+			if (!entry || !entry.extraction) continue;
+			const blob = new Blob([entry.extraction], { type: mimeForFilename(headers[i].name) });
+			result.push({ name: headers[i].name, url: URL.createObjectURL(blob) });
+			onProgress(i+1, headers.length);
+		}
+		return result;
+	}
+
+	async function extractBook(file, onProgress){
+		const name = file.name.toLowerCase();
+		if (name.endsWith('.cbr') || name.endsWith('.rar')){
+			return extractCbr(file, onProgress);
+		}
+		return extractCbz(file, onProgress);
+	}
+
+	// ---------- fluxo principal ----------
+	async function handleFile(file){
+		if (!file) return;
+		fileError.textContent = '';
+		loadingOverlay.classList.add('show');
+		loadingText.textContent = 'Abrindo... (0 / 0)';
+
+		try{
+			const result = await extractBook(file, (done, total) => {
+				loadingText.textContent = `Abrindo... (${done} / ${total})`;
+			});
+			enterReader(file.name, result);
+		} catch(err){
+			console.error(err);
+			fileError.textContent = 'Não foi possível abrir esse arquivo. Verifique se ele não está corrompido ou protegido por senha.';
+		} finally {
+			loadingOverlay.classList.remove('show');
+			fileInput.value = '';
+		}
+	}
+
+	function stripExt(name){
+		return name.replace(/\.[^./]+$/, '');
+	}
+
+	function enterReader(filename, extractedPages){
+		pages = extractedPages;
+		currentPage = 1;
+		mode = 'scroll';
+
+		bookTitleEl.textContent = stripExt(filename);
+		bookTitleEl.title = filename;
+
+		buildScrollView();
+		buildThumbnails();
+		setMode('scroll');
+		applyZoom(100);
+		updateProgress();
+
+		screenUpload.classList.remove('active');
+		screenReader.classList.add('active');
+	}
+
+	function resetReader(){
+		if (observer) observer.disconnect();
+		pages.forEach(p => URL.revokeObjectURL(p.url));
+		pages = [];
+		scrollView.innerHTML = '';
+		thumbGrid.innerHTML = '';
+		pageImg.src = '';
+		closeThumbs();
+
+		screenReader.classList.remove('active');
+		screenUpload.classList.add('active');
+	}
+
+	// ---------- construção das visualizações ----------
+	function buildScrollView(){
+		scrollView.innerHTML = '';
+		const frag = document.createDocumentFragment();
+		pages.forEach((p, i) => {
+			const frame = document.createElement('div');
+			frame.className = 'page-frame';
+			frame.dataset.page = String(i+1);
+			const img = document.createElement('img');
+			img.src = p.url;
+			img.alt = `Página ${i+1}`;
+			frame.appendChild(img);
+			frag.appendChild(frame);
+		});
+		scrollView.appendChild(frag);
+
+		if (observer) observer.disconnect();
+		observer = new IntersectionObserver((entries) => {
+			let topMost = null;
+			entries.forEach(e => {
+				if (e.isIntersecting){
+					const n = parseInt(e.target.dataset.page, 10);
+					if (topMost === null || n < topMost) topMost = n;
+				}
+			});
+			if (topMost !== null){
+				currentPage = topMost;
+				updateProgress();
+			}
+		}, { root: scrollView, threshold: 0.5 });
+
+		scrollView.querySelectorAll('.page-frame').forEach(f => observer.observe(f));
+	}
+
+	function buildThumbnails(){
+		thumbGrid.innerHTML = '';
+		const frag = document.createDocumentFragment();
+		pages.forEach((p, i) => {
+			const btn = document.createElement('button');
+			btn.className = 'thumb-item';
+			btn.dataset.page = String(i+1);
+			btn.type = 'button';
+			const img = document.createElement('img');
+			img.src = p.url;
+			img.loading = 'lazy';
+			img.alt = `Miniatura da página ${i+1}`;
+			const span = document.createElement('span');
+			span.textContent = i+1;
+			btn.appendChild(img);
+			btn.appendChild(span);
+			btn.addEventListener('click', () => {
+				goToPage(i+1);
+				closeThumbs();
+			});
+			frag.appendChild(btn);
+		});
+		thumbGrid.appendChild(frag);
+	}
+
+	// ---------- navegação ----------
+	function goToPage(n){
+		const total = pages.length;
+		if (total === 0) return;
+		n = Math.min(Math.max(n, 1), total);
+
+		if (mode === 'page'){
+			currentPage = n;
+			pageImg.src = pages[n-1].url;
+		} else if (mode === 'spread'){
+			const start = normalizeSpreadStart(n);
+			currentPage = start;
+			renderSpread(start);
+		} else {
+			currentPage = n;
+			const frame = scrollView.querySelector(`.page-frame[data-page="${n}"]`);
+			if (frame) frame.scrollIntoView({ block: 'start', behavior: 'smooth' });
+		}
+		updateProgress();
+	}
+
+	function nextPage(){
+		if (mode === 'spread') goToPage(currentPage + 2);
+		else goToPage(currentPage + 1);
+	}
+	function prevPage(){
+		if (mode === 'spread') goToPage(currentPage - 2);
+		else goToPage(currentPage - 1);
+	}
+
+	// páginas exibidas sempre em pares: 1-2, 3-4, 5-6...
+	function normalizeSpreadStart(n){
+		return (n % 2 === 1) ? n : n - 1;
+	}
+
+	function renderSpread(start){
+		const total = pages.length;
+		spreadImgLeft.src = pages[start-1].url;
+		spreadImgLeft.alt = `Página ${start}`;
+
+		const rightIndex = (start+1 <= total) ? start+1 : null;
+		spreadRight = rightIndex;
+
+		if (rightIndex){
+			spreadImgRight.src = pages[rightIndex-1].url;
+			spreadImgRight.alt = `Página ${rightIndex}`;
+			spreadImgRight.classList.remove('is-empty');
+			spreadView.classList.remove('is-solo');
+		} else {
+			spreadImgRight.src = '';
+			spreadImgRight.classList.add('is-empty');
+			spreadView.classList.add('is-solo');
+		}
+	}
+
+	function updateProgress(){
+		const total = pages.length;
+		pageBadge.textContent = (mode === 'spread' && spreadRight)
+			? `${currentPage}–${spreadRight} / ${total}`
+			: `${currentPage} / ${total}`;
+		progressFill.style.width = total ? `${(currentPage/total)*100}%` : '0%';
+		thumbGrid.querySelectorAll('.thumb-item').forEach(t => {
+			const p = parseInt(t.dataset.page,10);
+			t.classList.toggle('active', p === currentPage || (mode === 'spread' && p === spreadRight));
+		});
+	}
+
+	// ---------- modo de leitura ----------
+	const modeButtons = { scroll: modeScrollBtn, page: modePageBtn, spread: modeSpreadBtn };
+
+	function setMode(newMode){
+		mode = newMode;
+
+		scrollView.classList.add('hidden');
+		pageView.classList.add('hidden');
+		spreadView.classList.add('hidden');
+		readerMain.classList.remove('mode-scroll', 'mode-page', 'mode-spread');
+		readerMain.classList.add('mode-' + newMode);
+		Object.values(modeButtons).forEach(b => b.classList.remove('active'));
+		modeButtons[newMode].classList.add('active');
+
+		if (newMode === 'page'){
+			pageView.classList.remove('hidden');
+			pageImg.src = pages[currentPage-1] ? pages[currentPage-1].url : '';
+		} else if (newMode === 'spread'){
+			spreadView.classList.remove('hidden');
+			const start = normalizeSpreadStart(currentPage);
+			currentPage = start;
+			renderSpread(start);
+		} else {
+			scrollView.classList.remove('hidden');
+			// aguarda o navegador terminar de exibir/recalcular o layout antes de reposicionar
+			requestAnimationFrame(() => {
+				const frame = scrollView.querySelector(`.page-frame[data-page="${currentPage}"]`);
+				if (frame) frame.scrollIntoView({ block: 'start' });
+			});
+		}
+		updateProgress();
+	}
+
+	modeScrollBtn.addEventListener('click', () => setMode('scroll'));
+	modePageBtn.addEventListener('click', () => setMode('page'));
+	modeSpreadBtn.addEventListener('click', () => setMode('spread'));
+
+	// ---------- zoom ----------
+	function applyZoom(value){
+		value = Math.round(value / 10) * 10;
+		value = Math.min(Math.max(value, 60), 150);
+		zoomSlider.value = value;
+		zoomValue.textContent = value + '%';
+		document.documentElement.style.setProperty('--zoom', value);
+	}
+	zoomSlider.addEventListener('input', () => applyZoom(parseInt(zoomSlider.value, 10)));
+	zoomOutBtn.addEventListener('click', () => applyZoom(parseInt(zoomSlider.value,10) - 10));
+	zoomInBtn.addEventListener('click', () => applyZoom(parseInt(zoomSlider.value,10) + 10));
+
+	// ---------- miniaturas (drawer) ----------
+	function openThumbs(){
+		thumbDrawer.classList.add('open');
+		thumbOverlay.classList.add('open');
+	}
+	function closeThumbs(){
+		thumbDrawer.classList.remove('open');
+		thumbOverlay.classList.remove('open');
+	}
+	thumbsBtn.addEventListener('click', () => {
+		thumbDrawer.classList.contains('open') ? closeThumbs() : openThumbs();
+	});
+	closeThumbsBtn.addEventListener('click', closeThumbs);
+	thumbOverlay.addEventListener('click', closeThumbs);
+
+	// ---------- tela cheia ----------
+	fullscreenBtn.addEventListener('click', () => {
+		if (!document.fullscreenElement){
+			screenReader.requestFullscreen?.().catch(() => {});
+		} else {
+			document.exitFullscreen?.();
+		}
+	});
+
+	// ---------- navegação por clique (modo página) ----------
+	prevBtn.addEventListener('click', prevPage);
+	nextBtn.addEventListener('click', nextPage);
+
+	// ---------- teclado ----------
+	document.addEventListener('keydown', (e) => {
+		if (!screenReader.classList.contains('active')) return;
+
+		const key = e.key.toLowerCase();
+
+		if (e.key === 'ArrowRight' || e.key === ' ' || key === 'd'){
+			e.preventDefault();
+			nextPage();
+		} else if (e.key === 'ArrowLeft' || key === 'a'){
+			e.preventDefault();
+			prevPage();
+		} else if (key === 'f'){
+			fullscreenBtn.click();
+		} else if (key === 'g'){
+			thumbDrawer.classList.contains('open') ? closeThumbs() : openThumbs();
+		} else if (e.key === 'Escape'){
+			if (thumbDrawer.classList.contains('open')) closeThumbs();
+			else if (document.fullscreenElement) document.exitFullscreen?.();
+		}
+	});
+
+	// bug: duplo clique fora da página não deve selecionar nada (o CSS user-select:none já cobre a maioria dos casos)
+	readerMain.addEventListener('dblclick', (e) => e.preventDefault());
+
+	// ---------- voltar ----------
+	backBtn.addEventListener('click', resetReader);
+
+	// ---------- seleção de arquivo ----------
+	browseBtn.addEventListener('click', () => fileInput.click());
+	fileInput.addEventListener('change', (e) => handleFile(e.target.files[0]));
+
+	['dragenter','dragover'].forEach(evt => {
+		dropzone.addEventListener(evt, (e) => {
+			e.preventDefault();
+			dropzone.classList.add('drag');
+		});
+	});
+	['dragleave','dragend'].forEach(evt => {
+		dropzone.addEventListener(evt, (e) => {
+			e.preventDefault();
+			dropzone.classList.remove('drag');
+		});
+	});
+	dropzone.addEventListener('drop', (e) => {
+		e.preventDefault();
+		dropzone.classList.remove('drag');
+		const file = e.dataTransfer.files && e.dataTransfer.files[0];
+		if (file) handleFile(file);
+	});
+
+	// evita que o navegador abra o arquivo se ele for solto fora da dropzone
+	['dragover','drop'].forEach(evt => {
+		window.addEventListener(evt, (e) => {
+			if (e.target === dropzone || dropzone.contains(e.target)) return;
+			e.preventDefault();
+		});
+	});
+
+})();
+</script>
+</body>
+</html>
